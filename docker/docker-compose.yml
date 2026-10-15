@@ -1,0 +1,19 @@
+version: "3.8"
+
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: ml-app:v1
+    container_name: ml-app
+    ports:
+      - "5000:5000"
+    environment:
+      DB_HOST: 10.10.10.11
+      DB_NAME: ml_predictions
+      DB_USER: ml_app
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_SSLMODE: require
+      MODEL_PATH: /model/model.pkl
+    restart: unless-stopped
