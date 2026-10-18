@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Получение кода
+        uses: actions/checkout@v4
+
+      - name: Настройка Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Установка библиотек
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r app/requirements.txt
+          pip install flake8 pytest
+
+      - name: Обучение модели
+        run: python model/train.py
+
+      - name: Проверка стиля
+        run: flake8 app --max-line-length=120
+
+      - name: Запуск тестов
+        run: pytest -v app/tests/

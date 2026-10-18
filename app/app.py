@@ -1,4 +1,5 @@
 from flask import Flask, request, jsonify
+from pathlib import Path
 import psycopg2
 import json
 import os
@@ -6,7 +7,8 @@ import pickle
 
 app = Flask(__name__)
 
-MODEL_PATH = os.getenv("MODEL_PATH", "/model/model.pkl")
+DEFAULT_MODEL_PATH = Path(__file__).resolve().parent.parent / "model" / "model.pkl"
+MODEL_PATH = os.getenv("MODEL_PATH", str(DEFAULT_MODEL_PATH))
 
 with open(MODEL_PATH, "rb") as f:
     model = pickle.load(f)

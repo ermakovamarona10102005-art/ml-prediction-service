@@ -7,3 +7,5 @@ venv/
 *.log
 model/*.pkl
 !model/.gitkeep
+docker/.env
+actions-runner/
