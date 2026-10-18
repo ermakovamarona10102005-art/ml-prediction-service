@@ -1,13 +1,17 @@
-from sklearn.datasets import load_iris
-from sklearn.linear_model import LogisticRegression
+from sklearn.datasets import load_wine
+from sklearn.ensemble import RandomForestClassifier
 import pickle
 
-X, y = load_iris(return_X_y=True)
+X, y = load_wine(return_X_y=True)
 
-model = LogisticRegression(max_iter=200)
+model = RandomForestClassifier(
+    n_estimators=100,
+    random_state=42
+)
+
 model.fit(X, y)
 
 with open("model/model.pkl", "wb") as f:
     pickle.dump(model, f)
 
-print("Model trained and saved to model/model.pkl")
+print("Wine dataset model trained and saved to model/model.pkl")

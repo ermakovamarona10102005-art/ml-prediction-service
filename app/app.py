@@ -54,7 +54,7 @@ def predict():
         (
             json.dumps({"features": features}),
             json.dumps(result),
-            "v1.0"
+            "v2.0"
         )
     )
 
