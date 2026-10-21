@@ -1,0 +1,65 @@
+---
+- name: Configure Docker application server
+  hosts: app
+  become: true
+  vars:
+    project_dir: /home/student/ml-prediction-service
+    app_image: ghcr.io/ermakovamarona10102005-art/ml-prediction-service:latest
+    db_password: "{{ lookup('env', 'LAB6_DB_PASSWORD') }}"
+  tasks:
+    - name: Install Docker packages
+      apt:
+        name: [docker.io, python3-docker]
+        state: present
+        update_cache: true
+        cache_valid_time: 86400
+    - name: Enable Docker
+      service:
+        name: docker
+        state: started
+        enabled: true
+    - name: Add student to Docker group
+      user:
+        name: student
+        groups: docker
+        append: true
+    - name: Check database password is supplied
+      assert:
+        that: db_password | length > 0
+        quiet: true
+      no_log: true
+    - name: Store database environment file
+      copy:
+        content: "DB_PASSWORD={{ db_password }}\n"
+        dest: "{{ project_dir }}/docker/.env"
+        owner: student
+        group: student
+        mode: '0600'
+      no_log: true
+    - name: Run ML application
+      community.docker.docker_container:
+        name: ml-app
+        image: "{{ app_image }}"
+        state: started
+        restart_policy: unless-stopped
+        published_ports: ['5000:5000']
+        env:
+          DB_HOST: '10.10.10.11'
+          DB_NAME: ml_predictions
+          DB_USER: ml_app
+          DB_PASSWORD: "{{ db_password }}"
+          DB_SSLMODE: require
+          MODEL_PATH: /model/model.pkl
+      no_log: true
+    - name: Verify health endpoint
+      uri:
+        url: http://127.0.0.1:5000/health
+        return_content: true
+        status_code: 200
+      register: health
+      until: health.status == 200
+      retries: 10
+      delay: 3
+    - name: Show health result
+      debug:
+        var: health.json

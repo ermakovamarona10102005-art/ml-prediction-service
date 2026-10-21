@@ -1,0 +1,3 @@
+---
+ansible_password: "{{ lookup('env', 'LAB6_VM_PASSWORD') }}"
+ansible_become_password: "{{ lookup('env', 'LAB6_VM_PASSWORD') }}"

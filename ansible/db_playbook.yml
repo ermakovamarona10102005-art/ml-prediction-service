@@ -1,0 +1,62 @@
+---
+- name: Configure PostgreSQL database server
+  hosts: db
+  become: true
+  tasks:
+    - name: Install PostgreSQL packages
+      apt:
+        name: [postgresql, postgresql-contrib, python3-psycopg2, acl]
+        state: present
+        update_cache: true
+        cache_valid_time: 86400
+    - name: Enable PostgreSQL
+      service:
+        name: postgresql
+        state: started
+        enabled: true
+    - name: Ensure application role exists
+      become_user: postgres
+      community.postgresql.postgresql_user:
+        name: ml_app
+        state: present
+    - name: Ensure application database exists
+      become_user: postgres
+      community.postgresql.postgresql_db:
+        name: ml_predictions
+        state: present
+    - name: Ensure predictions table exists
+      become_user: postgres
+      community.postgresql.postgresql_table:
+        db: ml_predictions
+        name: predictions
+        columns:
+          - id SERIAL PRIMARY KEY
+          - timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          - input_data JSONB NOT NULL
+          - prediction JSONB NOT NULL
+          - model_version VARCHAR(50) NOT NULL
+        state: present
+    - name: Grant schema usage
+      become_user: postgres
+      community.postgresql.postgresql_privs:
+        db: ml_predictions
+        type: schema
+        objs: public
+        roles: ml_app
+        privs: USAGE
+    - name: Grant table privileges
+      become_user: postgres
+      community.postgresql.postgresql_privs:
+        db: ml_predictions
+        type: table
+        objs: predictions
+        roles: ml_app
+        privs: SELECT,INSERT
+    - name: Grant sequence privileges
+      become_user: postgres
+      community.postgresql.postgresql_privs:
+        db: ml_predictions
+        type: sequence
+        objs: predictions_id_seq
+        roles: ml_app
+        privs: USAGE,SELECT
