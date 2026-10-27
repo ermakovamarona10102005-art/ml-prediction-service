@@ -24,8 +24,8 @@ resource "proxmox_virtual_environment_download_file" "ubuntu" {
   node_name          = "pve"
   datastore_id       = "lab6test"
   content_type       = "import"
-  file_name          = "lab6-jammy-amd64.qcow2"
-  url                = "https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img"
+  file_name          = "lab6-jammy-minimal-amd64.qcow2"
+  url                = "https://cloud-images.ubuntu.com/minimal/releases/jammy/release/ubuntu-22.04-minimal-cloudimg-amd64.img"
   checksum           = var.ubuntu_sha256
   checksum_algorithm = "sha256"
   upload_timeout     = 1800

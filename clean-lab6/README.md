@@ -1,6 +1,6 @@
 # Isolated Lab 6 clean deployment
 
-This configuration creates VM110 and VM111 from the official Ubuntu 22.04
+This configuration creates VM110 and VM111 from the official Ubuntu Minimal 22.04
 cloud image. It does not import, replace or manage the original VM100/VM101.
 Its Terraform state is separate from the original `terraform/` directory.
 
@@ -10,6 +10,7 @@ with `images,import` content enabled, and Terraform 1.16.6 with
 bpg/proxmox 0.117.0. The example checksum must match the official image at
 deployment time. A changed upstream image must not be accepted without
 verifying a new checksum. Keep an archived copy for exact long-term replay.
+The image download timeout is 30 minutes for slower laboratory connections.
 
 VM110: PostgreSQL, 10.10.10.21, 1 CPU, 1 GiB RAM, 8 GiB disk.
 VM111: Docker application, 10.10.10.22, 2 CPUs, 2 GiB RAM, 8 GiB disk.
