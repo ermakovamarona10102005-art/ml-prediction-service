@@ -1,0 +1,156 @@
+---
+- name: Configure a newly created PostgreSQL VM
+  hosts: db
+  become: true
+  vars:
+    db_password: "{{ lookup('env', 'LAB6_DB_PASSWORD') }}"
+  tasks:
+    - name: Require a database password
+      assert:
+        that: db_password | length > 0
+      no_log: true
+    - name: Install PostgreSQL and module dependencies
+      apt:
+        name: [postgresql, postgresql-contrib, python3-psycopg2, acl]
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+    - name: Enable PostgreSQL service
+      service:
+        name: postgresql
+        state: started
+        enabled: true
+    - name: Listen on the isolated database interface
+      become_user: postgres
+      community.postgresql.postgresql_set:
+        name: listen_addresses
+        value: '10.10.10.21'
+      notify: Restart PostgreSQL
+    - name: Permit only the isolated application VM
+      lineinfile:
+        path: /etc/postgresql/14/main/pg_hba.conf
+        regexp: '^hostssl\s+ml_predictions\s+ml_app\s+10\.10\.10\.22/32\s+'
+        line: 'hostssl ml_predictions ml_app 10.10.10.22/32 scram-sha-256'
+      notify: Restart PostgreSQL
+    - name: Create the role with a password on a fresh database
+      become_user: postgres
+      community.postgresql.postgresql_user:
+        name: ml_app
+        password: "{{ db_password }}"
+        no_password_changes: false
+        state: present
+      no_log: true
+    - name: Create application database
+      become_user: postgres
+      community.postgresql.postgresql_db:
+        name: ml_predictions
+        owner: ml_app
+        state: present
+    - name: Create predictions table
+      become_user: postgres
+      community.postgresql.postgresql_table:
+        db: ml_predictions
+        name: predictions
+        columns:
+          - id SERIAL PRIMARY KEY
+          - timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          - input_data JSONB NOT NULL
+          - prediction JSONB NOT NULL
+          - model_version VARCHAR(50) NOT NULL
+        state: present
+    - name: Grant table access
+      become_user: postgres
+      community.postgresql.postgresql_privs:
+        db: ml_predictions
+        type: table
+        objs: predictions
+        roles: ml_app
+        privs: SELECT,INSERT
+    - name: Grant sequence access
+      become_user: postgres
+      community.postgresql.postgresql_privs:
+        db: ml_predictions
+        type: sequence
+        objs: predictions_id_seq
+        roles: ml_app
+        privs: USAGE,SELECT
+    - name: Apply database network configuration
+      meta: flush_handlers
+  handlers:
+    - name: Restart PostgreSQL
+      service:
+        name: postgresql
+        state: restarted
+
+- name: Configure a newly created application VM
+  hosts: app
+  become: true
+  vars:
+    project_dir: /home/student/ml-prediction-service
+    db_password: "{{ lookup('env', 'LAB6_DB_PASSWORD') }}"
+    app_image: "{{ lookup('env', 'LAB6_IMAGE') }}"
+  tasks:
+    - name: Require deployment parameters
+      assert:
+        that:
+          - db_password | length > 0
+          - app_image | length > 0
+      no_log: true
+    - name: Install Docker Git and module dependencies
+      apt:
+        name: [docker.io, python3-docker, python3-psycopg2, git]
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+    - name: Enable Docker service
+      service:
+        name: docker
+        state: started
+        enabled: true
+    - name: Add student to Docker group
+      user:
+        name: student
+        groups: docker
+        append: true
+    - name: Obtain application repository on the fresh VM
+      become_user: student
+      git:
+        repo: https://github.com/ermakovamarona10102005-art/ml-prediction-service.git
+        dest: "{{ project_dir }}"
+        version: cce4e0f34678f3b151baf85d80c61091c8ec3386
+    - name: Store private database environment
+      copy:
+        dest: "{{ project_dir }}/docker/.env"
+        content: "DB_PASSWORD={{ db_password }}\n"
+        owner: student
+        group: student
+        mode: '0600'
+      no_log: true
+    - name: Run the isolated application container
+      community.docker.docker_container:
+        name: ml-app
+        image: "{{ app_image }}"
+        api_version: auto
+        state: started
+        restart_policy: unless-stopped
+        published_ports: ['5000:5000']
+        env:
+          DB_HOST: '10.10.10.21'
+          DB_NAME: ml_predictions
+          DB_USER: ml_app
+          DB_PASSWORD: "{{ db_password }}"
+          DB_SSLMODE: require
+          MODEL_PATH: /model/model.pkl
+      no_log: true
+    - name: Verify the isolated service
+      uri:
+        url: http://127.0.0.1:5000/health
+        status_code: 200
+        return_content: true
+      register: health
+      until: health.status == 200
+      retries: 20
+      delay: 3
+    - name: Show health result
+      debug:
+        var: health.json

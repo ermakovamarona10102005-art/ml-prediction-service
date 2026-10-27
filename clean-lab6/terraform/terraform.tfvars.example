@@ -1,0 +1,3 @@
+pm_api_token   = "root@pam!terraform-lab6=REPLACE_LOCALLY"
+ssh_public_key = "ssh-ed25519 REPLACE_WITH_CONTROLLER_PUBLIC_KEY"
+ubuntu_sha256  = "58be26aa7452f3005a4f7370a43928bfb33a7f35a77a8f3b264bf00266a17ca0"
