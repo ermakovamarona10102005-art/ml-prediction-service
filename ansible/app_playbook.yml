@@ -23,7 +23,7 @@
       become_user: student
       changed_when: false
     - name: Pull exact microservice images
-      command: docker compose --env-file docker/.env --env-file docker/images.env -f docker/docker-compose.yml pull prediction-service logger-service
+      command: docker compose --env-file docker/.env --env-file docker/images.env -f docker/docker-compose.yml pull --policy missing prediction-service logger-service
       args:
         chdir: "{{ project_dir }}"
       become_user: student
