@@ -17,3 +17,4 @@ terraform.tfvars
 *.auto.tfvars
 crash.log
 ansible/secrets.yml
+/monitoring/.secrets/

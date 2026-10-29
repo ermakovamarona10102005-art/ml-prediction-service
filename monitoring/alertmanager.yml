@@ -1,0 +1,11 @@
+route:
+  receiver: local-webhook
+  group_by: [alertname]
+  group_wait: 10s
+  group_interval: 30s
+  repeat_interval: 1h
+receivers:
+  - name: local-webhook
+    webhook_configs:
+      - url: http://alert-receiver:5001/dummy
+        send_resolved: true

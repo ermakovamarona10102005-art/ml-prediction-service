@@ -1,0 +1,38 @@
+groups:
+  - name: ml-service-alerts
+    rules:
+      - alert: MLServiceDown
+        expr: up{job="ml-app"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: ML service unavailable for one minute
+      - alert: HighPredictionLatency
+        expr: histogram_quantile(0.95, sum by (le) (rate(ml_prediction_latency_seconds_bucket[5m]))) > 1
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: Prediction p95 exceeds one second
+      - alert: LowPredictionAccuracy
+        expr: (sum(increase(ml_correct_predictions_total[10m])) / sum(increase(ml_labeled_predictions_total[10m])) < 0.8) and (sum(increase(ml_labeled_predictions_total[10m])) >= 10)
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: Accuracy on labeled requests is below 80 percent
+      - alert: DBPredictionErrors
+        expr: increase(ml_db_errors_total[5m]) > 3
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: More than three database write errors in five minutes
+      - alert: NoPredictionsReceived
+        expr: sum(rate(ml_predictions_total[10m])) == 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: No predictions received for ten minutes

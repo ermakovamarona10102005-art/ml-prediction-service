@@ -1,0 +1,2 @@
+# Server local time; inspect timedatectl when reproducing this schedule.
+0 2 * * * root /usr/local/sbin/lab7-backup-db >> /var/log/lab7-backup.log 2>&1
