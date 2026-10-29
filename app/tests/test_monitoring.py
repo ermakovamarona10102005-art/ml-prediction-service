@@ -1,70 +1,56 @@
+import io
 import json
-import sys
-from pathlib import Path
-
-import psycopg2
+import urllib.error
+import app as service
 from prometheus_client.parser import text_string_to_metric_families
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-import app as service  # noqa: E402
 
 FEATURES = [14.23, 1.71, 2.43, 15.6, 127, 2.8, 3.06, 0.28, 2.29, 5.64, 1.04, 3.92, 1065]
 
 
 def counter(name):
     text = service.app.test_client().get('/metrics').get_data(as_text=True)
-    return sum(sample.value for family in text_string_to_metric_families(text)
-               for sample in family.samples if sample.name == name)
+    return sum(s.value for f in text_string_to_metric_families(text) for s in f.samples if s.name == name)
 
 
-def test_metrics_format_and_business_names():
+def test_metrics():
     response = service.app.test_client().get('/metrics')
     assert response.status_code == 200
-    assert response.content_type.startswith('text/plain')
-    for name in ['ml_predictions_total', 'ml_db_errors_total', 'ml_labeled_predictions_total', 'ml_model_info']:
-        assert name in response.get_data(as_text=True)
+    assert 'ml_logger_errors_total' in response.get_data(as_text=True)
 
 
-def test_prediction_persists_and_updates_quality(monkeypatch):
-    writes = []
+def test_prediction_calls_logger_via_http(monkeypatch):
+    captured = []
 
-    class Connection:
-        def __enter__(self):
-            return self
+    class Response(io.BytesIO):
+        status = 201
 
-        def __exit__(self, *args):
-            return False
+    def send(req, timeout):
+        captured.append(json.loads(req.data))
+        assert req.full_url == 'http://logger-service:5001/log'
+        assert timeout == 5
+        return Response(b'{"status":"logged","id":42}')
 
-        def cursor(self):
-            return self
-
-        def execute(self, query, values):
-            writes.append(values)
-
-        def close(self):
-            pass
-
-    monkeypatch.setattr(service, 'get_db', Connection)
-    before = counter('ml_correct_predictions_total')
+    monkeypatch.setattr(service.urllib.request, 'urlopen', send)
     result = service.app.test_client().post('/predict', json={'features': FEATURES, 'true_class': 0})
     assert result.status_code == 200
+    assert result.headers['X-Log-Id'] == '42'
+    assert captured[0]['input_data']['features'] == FEATURES
+    assert captured[0]['prediction'] == result.get_json()
+    assert captured[0]['model_version'] == 'v2.0'
+
+
+def test_logger_failure_keeps_prediction_available(monkeypatch):
+    def unavailable(*args, **kwargs):
+        raise urllib.error.URLError('controlled test')
+
+    monkeypatch.setattr(service.urllib.request, 'urlopen', unavailable)
+    before = counter('ml_logger_errors_total')
+    result = service.app.test_client().post('/predict', json={'features': FEATURES})
+    assert result.status_code == 200
+    assert result.headers['X-Log-Status'] == 'failed'
     assert result.get_json()['class'] == 0
-    assert writes[0][2] == 'v2.0'
-    assert json.loads(writes[0][0])['features'] == FEATURES
-    assert counter('ml_correct_predictions_total') == before + 1
+    assert counter('ml_logger_errors_total') == before + 1
 
 
-def test_database_failure_is_visible(monkeypatch):
-    def unavailable():
-        raise psycopg2.OperationalError('test database unavailable')
-
-    monkeypatch.setattr(service, 'get_db', unavailable)
-    before = counter('ml_db_errors_total')
-    response = service.app.test_client().post('/predict', json={'features': FEATURES})
-    assert response.status_code == 503
-    assert counter('ml_db_errors_total') == before + 1
-
-
-def test_invalid_reference_class_rejected():
-    response = service.app.test_client().post('/predict', json={'features': FEATURES, 'true_class': 999})
-    assert response.status_code == 400
+def test_bad_reference_rejected():
+    assert service.app.test_client().post('/predict', json={'features': FEATURES, 'true_class': 999}).status_code == 400

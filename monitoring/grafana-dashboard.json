@@ -3,7 +3,7 @@
   "uid": "ml-prediction-overview",
   "title": "ML Prediction Service Overview",
   "schemaVersion": 39,
-  "version": 2,
+  "version": 3,
   "refresh": "15s",
   "timezone": "browser",
   "time": {
@@ -116,7 +116,7 @@
       },
       "targets": [
         {
-          "expr": "sum(increase(ml_db_errors_total[5m]))",
+          "expr": "sum(increase(logger_db_errors_total[5m]))",
           "refId": "A",
           "legendFormat": "{{predicted_class}}"
         }
@@ -236,7 +236,7 @@
       },
       "targets": [
         {
-          "expr": "up{job=\"ml-app\"}",
+          "expr": "up{job=\"prediction-service\"}",
           "refId": "A",
           "legendFormat": "{{predicted_class}}"
         }
@@ -244,6 +244,90 @@
       "fieldConfig": {
         "defaults": {
           "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 9,
+      "title": "Logger requests rate",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 32,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "sum by (status) (rate(logger_requests_total[5m]))",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 10,
+      "title": "Logger DB errors",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 32,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "increase(logger_db_errors_total[5m])",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 11,
+      "title": "Prediction logger errors",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 40,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "increase(ml_logger_errors_total[5m])",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0
         },
         "overrides": []
       },

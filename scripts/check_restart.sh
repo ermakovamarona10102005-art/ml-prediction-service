@@ -2,7 +2,7 @@
 # Controlled laboratory crash of ml-app only. Run on app-server with sudo.
 set -euo pipefail
 test "$(id -u)" -eq 0
-container=ml-app
+container=prediction-service
 before=$(docker inspect --format '{{.RestartCount}}' "$container")
 pid=$(docker inspect --format '{{.State.Pid}}' "$container")
 test "$pid" -gt 1

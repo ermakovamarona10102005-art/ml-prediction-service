@@ -1,86 +1,139 @@
 services:
-  app:
-    image: ${APP_IMAGE:-ml-prediction-service:lab7}
+  prediction-service:
+    image: ${PREDICTION_IMAGE:-ml-prediction-service:lab8}
     build:
       context: ..
       dockerfile: docker/Dockerfile
-    container_name: ml-app
-    ports: ["5000:5000"]
+    container_name: prediction-service
+    ports:
+    - 5000:5000
+    environment:
+      MODEL_PATH: /model/model.pkl
+      LOGGER_URL: http://logger-service:5001/log
+    restart: unless-stopped
+    healthcheck:
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://localhost:5000/health',
+        timeout=3)
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    networks:
+    - monitoring
+    depends_on:
+      logger-service:
+        condition: service_healthy
+  logger-service:
+    image: ${LOGGER_IMAGE:-ml-logger-service:lab8}
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.logger
+    container_name: logger-service
+    ports:
+    - 5001:5001
     environment:
       DB_HOST: 10.10.10.11
       DB_NAME: ml_predictions
       DB_USER: ml_app
       DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
       DB_SSLMODE: require
-      MODEL_PATH: /model/model.pkl
     restart: unless-stopped
+    networks:
+    - monitoring
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health', timeout=3)"]
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://localhost:5001/health',
+        timeout=3)
       interval: 15s
       timeout: 5s
       retries: 3
       start_period: 20s
-    networks: [monitoring]
   node-exporter:
     image: prom/node-exporter:v1.9.1
     container_name: node-exporter
-    ports: ["9100:9100"]
+    ports:
+    - 9100:9100
     pid: host
     volumes:
-      - /proc:/host/proc:ro
-      - /sys:/host/sys:ro
-      - /:/rootfs:ro,rslave
-    command: ["--path.procfs=/host/proc", "--path.sysfs=/host/sys", "--path.rootfs=/rootfs"]
+    - /proc:/host/proc:ro
+    - /sys:/host/sys:ro
+    - /:/rootfs:ro,rslave
+    command:
+    - --path.procfs=/host/proc
+    - --path.sysfs=/host/sys
+    - --path.rootfs=/rootfs
     restart: unless-stopped
-    networks: [monitoring]
+    networks:
+    - monitoring
   prometheus:
     image: prom/prometheus:v3.5.0
     container_name: prometheus
-    ports: ["9090:9090"]
+    ports:
+    - 9090:9090
     volumes:
-      - ../monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - ../monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
-      - prometheus-data:/prometheus
-    command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.path=/prometheus", "--storage.tsdb.retention.time=7d", "--storage.tsdb.retention.size=256MB"]
+    - ../monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    - ../monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
+    - prometheus-data:/prometheus
+    command:
+    - --config.file=/etc/prometheus/prometheus.yml
+    - --storage.tsdb.path=/prometheus
+    - --storage.tsdb.retention.time=7d
+    - --storage.tsdb.retention.size=256MB
     restart: unless-stopped
-    networks: [monitoring]
+    networks:
+    - monitoring
   alertmanager:
     image: prom/alertmanager:v0.28.1
     container_name: alertmanager
-    ports: ["9093:9093"]
+    ports:
+    - 9093:9093
     volumes:
-      - ../monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
-      - alertmanager-data:/alertmanager
+    - ../monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    - alertmanager-data:/alertmanager
     restart: unless-stopped
-    networks: [monitoring]
+    networks:
+    - monitoring
   alert-receiver:
-    image: ${APP_IMAGE:-ml-prediction-service:lab7}
+    image: ghcr.io/ermakovamarona10102005-art/ml-prediction-service:e108695ea108178b6bfee87c52a9e2a0b96fa100
     container_name: alert-receiver
-    entrypoint: ["python", "/webhook.py"]
+    entrypoint:
+    - python
+    - /webhook.py
     volumes:
-      - ../monitoring/webhook.py:/webhook.py:ro
-      - alert-notifications:/data
+    - ../monitoring/webhook.py:/webhook.py:ro
+    - alert-notifications:/data
     restart: unless-stopped
-    networks: [monitoring]
+    networks:
+    - monitoring
   grafana:
     image: grafana/grafana:12.1.1
     container_name: grafana
-    ports: ["3000:3000"]
+    ports:
+    - 3000:3000
     environment:
       GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana-admin-password
-      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_USERS_ALLOW_SIGN_UP: 'false'
     volumes:
-      - grafana-data:/var/lib/grafana
-      - ../monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
-      - ../monitoring/grafana-dashboard.json:/var/lib/grafana/dashboards/overview.json:ro
-    secrets: [grafana-admin-password]
+    - grafana-data:/var/lib/grafana
+    - ../monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+    - ../monitoring/grafana-dashboard.json:/var/lib/grafana/dashboards/overview.json:ro
+    secrets:
+    - grafana-admin-password
     restart: unless-stopped
-    networks: [monitoring]
+    networks:
+    - monitoring
 volumes:
-  prometheus-data:
-  grafana-data:
-  alertmanager-data:
-  alert-notifications:
+  prometheus-data: null
+  grafana-data: null
+  alertmanager-data: null
+  alert-notifications: null
 networks:
   monitoring:
     driver: bridge

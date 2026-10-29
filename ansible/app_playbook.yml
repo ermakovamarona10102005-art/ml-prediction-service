@@ -1,65 +1,47 @@
 ---
-- name: Configure Docker application server
+- name: Deploy prediction and logger microservices
   hosts: app
   become: true
   vars:
     project_dir: /home/student/ml-prediction-service
-    app_image: ghcr.io/ermakovamarona10102005-art/ml-prediction-service:latest
-    db_password: "{{ lookup('env', 'LAB6_DB_PASSWORD') }}"
+    ansible_become_password: "{{ lookup('env', 'LAB8_VM_PASSWORD') }}"
+    pull_images: true
   tasks:
-    - name: Install Docker packages
+    - name: Install Docker and Compose
       apt:
-        name: [docker.io, python3-docker]
+        name: [docker.io, docker-compose-v2]
         state: present
-        update_cache: true
-        cache_valid_time: 86400
     - name: Enable Docker
       service:
         name: docker
         state: started
         enabled: true
-    - name: Add student to Docker group
-      user:
-        name: student
-        groups: docker
-        append: true
-    - name: Check database password is supplied
-      assert:
-        that: db_password | length > 0
-        quiet: true
-      no_log: true
-    - name: Store database environment file
-      copy:
-        content: "DB_PASSWORD={{ db_password }}\n"
-        dest: "{{ project_dir }}/docker/.env"
-        owner: student
-        group: student
-        mode: '0600'
-      no_log: true
-    - name: Run ML application
-      community.docker.docker_container:
-        name: ml-app
-        image: "{{ app_image }}"
-        state: started
-        restart_policy: unless-stopped
-        published_ports: ['5000:5000']
-        env:
-          DB_HOST: '10.10.10.11'
-          DB_NAME: ml_predictions
-          DB_USER: ml_app
-          DB_PASSWORD: "{{ db_password }}"
-          DB_SSLMODE: require
-          MODEL_PATH: /model/model.pkl
-      no_log: true
-    - name: Verify health endpoint
+    - name: Validate stack configuration
+      command: docker compose --env-file docker/.env --env-file docker/images.env -f docker/docker-compose.yml config --quiet
+      args:
+        chdir: "{{ project_dir }}"
+      become_user: student
+      changed_when: false
+    - name: Pull exact microservice images
+      command: docker compose --env-file docker/.env --env-file docker/images.env -f docker/docker-compose.yml pull prediction-service logger-service
+      args:
+        chdir: "{{ project_dir }}"
+      become_user: student
+      when: pull_images | bool
+      changed_when: false
+    - name: Start both microservices and monitoring
+      command: docker compose --env-file docker/.env --env-file docker/images.env -f docker/docker-compose.yml up -d --no-build --remove-orphans
+      args:
+        chdir: "{{ project_dir }}"
+      become_user: student
+      register: compose
+      changed_when: "'Started' in compose.stderr or 'Recreated' in compose.stderr or 'Created' in compose.stderr"
+    - name: Verify both health endpoints
       uri:
-        url: http://127.0.0.1:5000/health
-        return_content: true
+        url: "http://127.0.0.1:{{ item }}/health"
         status_code: 200
+      loop: [5000, 5001]
       register: health
       until: health.status == 200
-      retries: 10
+      retries: 30
       delay: 3
-    - name: Show health result
-      debug:
-        var: health.json

@@ -22,7 +22,7 @@ health = get('/api/datasources/uid/prometheus/health')
 assert health['status'] == 'OK', health
 print('DATASOURCE HEALTH:', health['status'], health.get('message', ''))
 dashboard = get('/api/dashboards/uid/ml-prediction-overview')['dashboard']
-assert len(dashboard['panels']) == 8
+assert len(dashboard['panels']) == 11
 print('DASHBOARD:', dashboard['title'])
 for panel in dashboard['panels']:
     print('PANEL:', panel['title'])

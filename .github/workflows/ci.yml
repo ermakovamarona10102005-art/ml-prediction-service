@@ -17,62 +17,68 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Получение кода
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Настройка Python
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.10"
 
-      - name: Установка библиотек
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r app/requirements.txt
+          pip install -r app/requirements.txt -r logger_service/requirements.txt
           pip install flake8 pytest
 
-      - name: Обучение модели
+      - name: Train model
         run: python model/train.py
 
-      - name: Проверка стиля
-        run: flake8 app --max-line-length=120
+      - name: Lint both services
+        run: flake8 app logger_service --max-line-length=120
 
-      - name: Запуск тестов
-        run: pytest -v app/tests/
+      - name: Test both services
+        run: |
+          pytest -v app/tests/
+          pytest -v logger_service/tests/
 
   build-and-push:
     needs: lint-and-test
     runs-on: ubuntu-latest
 
     steps:
-      - name: Получение кода
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Настройка Python
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.10"
 
-      - name: Подготовка модели
+      - name: Train model
         run: |
           python -m pip install --upgrade pip
-          pip install -r app/requirements.txt
+          pip install -r app/requirements.txt -r logger_service/requirements.txt
           python model/train.py
 
-      - name: Вход в GitHub Container Registry
+      - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Сборка образа
-        run: docker build -t "$IMAGE_NAME:latest" -t "$IMAGE_NAME:${{ github.sha }}" -f docker/Dockerfile .
-
-      - name: Отправка образа в Registry
+      - name: Build two images
         run: |
-          docker push "$IMAGE_NAME:${{ github.sha }}"
-          docker push "$IMAGE_NAME:latest"
+          docker build -t "$IMAGE_NAME/prediction-service:latest" -t "$IMAGE_NAME/prediction-service:${{ github.sha }}" -f docker/Dockerfile .
+          docker build -t "$IMAGE_NAME/logger-service:latest" -t "$IMAGE_NAME/logger-service:${{ github.sha }}" -f docker/Dockerfile.logger .
+
+      - name: Push two images
+        run: |
+          docker push "$IMAGE_NAME/prediction-service:${{ github.sha }}"
+          docker push "$IMAGE_NAME/prediction-service:latest"
+          docker push "$IMAGE_NAME/logger-service:${{ github.sha }}"
+          docker push "$IMAGE_NAME/logger-service:latest"
 
   deploy:
     needs: build-and-push
@@ -82,7 +88,7 @@ jobs:
       cancel-in-progress: false
 
     steps:
-      - name: Развёртывание на ВМ2
+      - name: Deploy both services
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
@@ -105,5 +111,5 @@ jobs:
           umask 077
           printf 'DB_PASSWORD=%s\n' "$DB_PASSWORD" > docker/.env
           chmod 600 docker/.env
-          bash scripts/deploy.sh "$IMAGE_NAME:$IMAGE_TAG"
-          python3 ansible/verify_lab6.py
+          bash scripts/deploy.sh "$IMAGE_NAME/prediction-service:$IMAGE_TAG" "$IMAGE_NAME/logger-service:$IMAGE_TAG"
+          python3 ansible/verify_lab8.py

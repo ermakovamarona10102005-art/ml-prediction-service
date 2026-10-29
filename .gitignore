@@ -18,3 +18,4 @@ terraform.tfvars
 crash.log
 ansible/secrets.yml
 /monitoring/.secrets/
+/docker/images.env

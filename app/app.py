@@ -2,7 +2,8 @@ from flask import Flask, request, jsonify, Response
 from pathlib import Path
 from prometheus_client import Counter, Histogram, Gauge
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
-import psycopg2
+import urllib.request
+import urllib.error
 import json
 import os
 import pickle
@@ -18,7 +19,7 @@ with open(MODEL_PATH, "rb") as f:
 
 PREDICTIONS_TOTAL = Counter("ml_predictions_total", "Successful predictions", ["model_version", "predicted_class"])
 PREDICTION_LATENCY = Histogram("ml_prediction_latency_seconds", "Prediction and database latency in seconds")
-DB_ERRORS_TOTAL = Counter("ml_db_errors_total", "Database write errors")
+LOGGER_ERRORS_TOTAL = Counter("ml_logger_errors_total", "HTTP logging failures")
 LABELED_TOTAL = Counter("ml_labeled_predictions_total", "Predictions with a supplied reference class")
 CORRECT_TOTAL = Counter("ml_correct_predictions_total", "Predictions matching the supplied reference class")
 MODEL_INFO = Gauge("ml_model_info", "Loaded model version", ["version"])
@@ -27,20 +28,28 @@ for cls in model.classes_:
     PREDICTIONS_TOTAL.labels(model_version=MODEL_VERSION, predicted_class=str(cls)).inc(0)
 
 
-def get_db():
-    return psycopg2.connect(
-        host=os.getenv("DB_HOST", "10.10.10.11"),
-        dbname=os.getenv("DB_NAME", "ml_predictions"),
-        user=os.getenv("DB_USER", "ml_app"),
-        password=os.getenv("DB_PASSWORD"),
-        sslmode=os.getenv("DB_SSLMODE", "require"),
-        connect_timeout=5
-    )
+LOGGER_URL = os.getenv("LOGGER_URL", "http://logger-service:5001/log")
+
+
+def send_log(features, result):
+    payload = json.dumps({"input_data": {"features": features},
+                          "prediction": result, "model_version": MODEL_VERSION}).encode()
+    req = urllib.request.Request(LOGGER_URL, payload, {"Content-Type": "application/json"}, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=5) as response:
+            logged = json.load(response)
+            if response.status != 201 or logged.get("status") != "logged" or not isinstance(logged.get("id"), int):
+                raise ValueError("Unexpected logger response")
+            return logged["id"]
+    except (urllib.error.URLError, OSError, ValueError):
+        LOGGER_ERRORS_TOTAL.inc()
+        app.logger.warning("Logger service unavailable; prediction returned without persistence")
+        return None
 
 
 @app.route("/health", methods=["GET"])
 def health():
-    return jsonify({"status": "ok"})
+    return jsonify({"status": "ok", "service": "prediction"})
 
 
 @app.route("/metrics", methods=["GET"])
@@ -66,28 +75,17 @@ def predict():
         pred = int(model.predict([features])[0])
         proba = float(max(model.predict_proba([features])[0]))
         result = {"class": pred, "probability": proba}
-        conn = None
-        try:
-            conn = get_db()
-            with conn:
-                with conn.cursor() as cur:
-                    cur.execute(
-                        "INSERT INTO predictions (input_data, prediction, model_version) VALUES (%s, %s, %s)",
-                        (json.dumps({"features": features}), json.dumps(result), MODEL_VERSION)
-                    )
-        except psycopg2.Error:
-            DB_ERRORS_TOTAL.inc()
-            app.logger.error("Prediction database write failed")
-            return jsonify({"error": "Database unavailable"}), 503
-        finally:
-            if conn is not None:
-                conn.close()
+        log_id = send_log(features, result)
         PREDICTIONS_TOTAL.labels(model_version=MODEL_VERSION, predicted_class=str(pred)).inc()
         if true_class is not None:
             LABELED_TOTAL.inc()
             if pred == true_class:
                 CORRECT_TOTAL.inc()
-        return jsonify(result)
+        response = jsonify(result)
+        response.headers["X-Log-Status"] = "logged" if log_id is not None else "failed"
+        if log_id is not None:
+            response.headers["X-Log-Id"] = str(log_id)
+        return response
     finally:
         PREDICTION_LATENCY.observe(time.perf_counter() - start)
 
